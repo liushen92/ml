@@ -4,7 +4,7 @@ import time
 import math
 import random
 import pickle
-import threading  
+import threading
 import numpy as np
 import matplotlib
 matplotlib.use('wx')
@@ -19,20 +19,20 @@ class SparseMatrix:
     cols = None
     _sum = 0.0
     mean = 0.0
-    
+
     def __init__(self, rows = None, cols = None):
         self.kv_dict = dict()
-        
+
         if rows == None:
             self.rows = dict()
         else:
             self.rows = dict(rows)
-        
+
         if cols == None:
             self.cols = dict()
         else:
             self.cols = dict(cols)
-        
+
         self._sum = 0.0
         self.mean = 0.0
 
@@ -45,24 +45,24 @@ class SparseMatrix:
         ret_str += '[INFO]: mean: %f\n' % self.mean
         ret_str += '[INFO]: sum: %f\n' % self._sum
         return ret_str
-        
+
     def __len__(self):
         return len(self.kv_dict)
 
     def __getitem__(self, index):
         r_index, c_index = index
-        
-        if not r_index in rows or not c_index in cols:
-            return 0.0
-        
-        if not (rows[r_index], cols[c_index]) in kv_dict:
+
+        if not r_index in self.rows or not c_index in self.cols:
             return 0.0
 
-        return 1.0 * self.kv_dict[rows[r_index], cols[c_index]]
-    
+        if not (self.rows[r_index], self.cols[c_index]) in kv_dict:
+            return 0.0
+
+        return 1.0 * self.kv_dict[self.rows[r_index], self.cols[c_index]]
+
     def __setitem__(self, index, value):
         r_index, c_index = index
-        
+
         if not r_index in self.rows:
             self.rows[r_index] = len(self.rows)
         row = self.rows[r_index]
@@ -79,12 +79,12 @@ class SparseMatrix:
         self.kv_dict[row, col] = value
 
         self.mean = 1.0 * self._sum / len(self.kv_dict) if len(self.kv_dict) != 0 else 0.0
-    
+
 
 class ParallelSGD(threading.Thread):
 
-    def __init__(self, name, model): 
-        threading.Thread.__init__(self)  
+    def __init__(self, name, model):
+        threading.Thread.__init__(self)
         self.name = name
         self.model = model
         # self.v = np.matrix(np.zeros([(model.num_factor + 1) * 2, 1]))
@@ -107,10 +107,10 @@ class ParallelSGD(threading.Thread):
             bi = self.model.bi[i]
 
             self.model.thread_lock.release()
-        
+
             r_pred = self.model.mu + bu + bi + float(pu * qi.T)
             err = r - r_pred
-        
+
             pu_update = pu + self.model.alpha * (err * qi - self.model._lambda * pu)
             qi += self.model.alpha * (err * pu - self.model._lambda * qi)
 
@@ -118,14 +118,14 @@ class ParallelSGD(threading.Thread):
             bi += self.model.alpha * (err - self.model._lambda * bi)
 
             self.model.thread_lock.acquire()
- 
+
             self.model.P[u] = pu_update
             self.model.Q[i] = qi
             self.model.bu[u] = bu
             self.model.bi[i] = bi
 
             self.model.sqr_err += err ** 2
-        
+
             self.model.thread_lock.release()
 
 class MF:
@@ -139,32 +139,32 @@ class MF:
         self.bi = None
         self.mu = 0.0
 
-        self.rows = None   
+        self.rows = None
         self.cols = None
- 
+
         self.num_factor = num_factor
         self._lambda = _lambda
         self.max_iter = max_iter
         self.alpha = alpha
         self.num_thread = num_thread
-        self.validate = validate    
+        self.validate = validate
 
         self.L_train = None
         self.L_validate = None
         self.sqr_err = 0.0
         self.current_sample = 0
         self.thread_lock = threading.Lock()
- 
+
     def train(self, ratings, model_path):
- 
+
         self.mu = ratings.mean
         self.P = 0.001 * np.matrix(np.random.randn(len(ratings.rows), self.num_factor))
         self.bu = 0.001 * np.matrix(np.random.randn(len(ratings.rows), 1))
         self.Q = 0.001 * np.matrix(np.random.randn(len(ratings.cols), self.num_factor))
         self.bi = 0.001 * np.matrix(np.random.randn(len(ratings.cols), 1))
-        
+
         self.rows = dict(ratings.rows)
-        self.cols = dict(ratings.cols)       
+        self.cols = dict(ratings.cols)
 
         if self.validate > 0:
             T = ratings.kv_dict.items()
@@ -176,8 +176,8 @@ class MF:
             self.L_train = ratings.kv_dict.items()
 
         rmse_train = [0.0] * self.max_iter
-        rmse_validate = [0.0] * self.max_iter       
- 
+        rmse_validate = [0.0] * self.max_iter
+
         for s in range(self.max_iter):
 
             random.shuffle(self.L_train)
@@ -185,7 +185,7 @@ class MF:
             self.sqr_err = 0.0
 
             self.threads = [ParallelSGD('Thread_%d' % n, self) for n in range(self.num_thread)]
-            
+
             start = time.time()
             for t in self.threads:
                 t.start()
@@ -195,12 +195,12 @@ class MF:
             duration = terminal - start
 
             rmse_train[s] = math.sqrt(self.sqr_err / len(ratings.kv_dict))
-    
+
             if self.validate > 0:
                 m = SparseMatrix()
                 m.kv_dict = {k : v for (k, v) in self.L_validate}
                 rmse_validate[s] = float(self.test(m))
-            
+
             sys.stderr.write('Iter: %4.4i' % (s + 1))
             sys.stderr.write('\t[Train RMSE] = %f' % rmse_train[s])
             if self.validate > 0:
@@ -215,7 +215,7 @@ class MF:
         plt.plot(range(self.max_iter), rmse_train, '-og')
         plt.plot(range(self.max_iter), rmse_validate, '-xb')
         plt.show()
-            
+
     def test(self, ratings):
 
         U = np.matrix(np.zeros([len(ratings), self.num_factor]))
@@ -230,8 +230,8 @@ class MF:
             if i < len(self.Q): v_kv[s] = i
 
         U[u_kv.keys()] = self.P[u_kv.values()]
-        V[v_kv.keys()] = self.Q[v_kv.values()]  
-      
+        V[v_kv.keys()] = self.Q[v_kv.values()]
+
         b[u_kv.keys()] += self.bu[u_kv.values()]
         b[v_kv.keys()] += self.bi[v_kv.values()]
 
@@ -245,7 +245,7 @@ class MF:
         fp_raw_model = open(path, 'w')
 
         output = dict()
-        
+
         for k, v in self.rows.items():
             output['type'] = 'USER'
             output['id'] = k
@@ -259,9 +259,9 @@ class MF:
             output['latent_factor'] = map(lambda x : round(x, 6), self.Q[v].tolist()[0])
             output['bias'] = round(float(self.bi[v]), 6)
             print >> fp_raw_model, json.dumps(output)
-            
+
         fp_raw_model.close()
-    
+
 
     def dump_model(self, path):
 
@@ -274,7 +274,7 @@ class MF:
         print >> fp_meta_data, json.dumps(self.rows)
         print >> fp_meta_data, json.dumps(self.cols)
         fp_meta_data.close()
-        
+
         self.P.tofile(path + '.uf')
         self.bu.tofile(path + '.ub')
         self.Q.tofile(path + '.if')
@@ -304,7 +304,7 @@ class MF:
         self.cols = json.loads(fp_meta_data.readline())
 
         fp_meta_data.close()
-           
+
 def read_sparse_matrix(fp_data, rows = None, cols = None):
     m = SparseMatrix(rows, cols)
     for line in fp_data:
@@ -314,9 +314,9 @@ def read_sparse_matrix(fp_data, rows = None, cols = None):
         rating = float(rating)
         m[user_id, item_id] = rating
     return m
- 
+
 if __name__ == '__main__':
- 
+
     train_data = 'data/movielens.1m.train'
     # train_data = '/home/mazefeng/movielens/ra.train'
     test_data = 'data/movielens.1m.test'
@@ -339,7 +339,7 @@ if __name__ == '__main__':
 
     rmse_train = mf.test(train_ratings)
     rmse_test = mf.test(test_ratings)
-    
+
     print >> sys.stderr, 'Training RMSE for MovieLens 1m dataset: %lf' % rmse_train
     print >> sys.stderr, 'Test RMSE for MovieLens 1m dataset: %lf' % rmse_test
 
